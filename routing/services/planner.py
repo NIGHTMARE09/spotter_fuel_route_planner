@@ -83,7 +83,7 @@ def plan_trip(start, finish, *, start_fuel_gallons, corridor_miles, stop_cost, r
     # would have bought it - so a full start tank never looks dearer than an
     # empty one, and a 300-mile trip on a full tank still reports what it cost.
     trip_gallons = route.distance_miles / mpg
-    starting_fuel_used = max(0.0, trip_gallons - plan.total_gallons)
+    starting_fuel_used = min(start_fuel_gallons, max(0.0, trip_gallons - plan.total_gallons))
     first_tank = [s.price for s in on_route if s.mile <= max_range] or [s.price for s in on_route]
     starting_price = min(first_tank) if first_tank else None
     trip_cost = pump_cost + starting_fuel_used * starting_price if starting_price is not None else None

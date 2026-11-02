@@ -1,3 +1,4 @@
+import logging
 from urllib.parse import urlencode
 
 from django.shortcuts import render
@@ -13,6 +14,8 @@ from .services.osrm import NoRoute, RoutingError
 from .services.planner import plan_trip
 from .services.stations import StationsUnavailable
 
+log = logging.getLogger(__name__)
+
 # Client mistakes are 4xx, upstream/setup failures 5xx. Order matters: subclasses first.
 ERRORS = (
     (GeocodingUnavailable, "geocoding_unavailable", status.HTTP_503_SERVICE_UNAVAILABLE),
@@ -22,6 +25,11 @@ ERRORS = (
     (RoutingError, "routing_failed", status.HTTP_502_BAD_GATEWAY),
     (StationsUnavailable, "stations_not_loaded", status.HTTP_503_SERVICE_UNAVAILABLE),
 )
+UPSTREAM_DETAIL = {
+    "geocoding_unavailable": "The geocoding service is unavailable. Retry shortly, or pass 'lat,lon' or 'City, ST'.",
+    "routing_failed": "The routing service is unavailable. Retry shortly.",
+    "stations_not_loaded": "No fuel stations loaded. Run `python manage.py load_stations`.",
+}
 
 
 class RoutePlanView(APIView):
@@ -44,7 +52,11 @@ class RoutePlanView(APIView):
             result = plan_trip(**q.validated_data)
         except tuple(e for e, _, _ in ERRORS) as exc:
             code, http = next((c, h) for e, c, h in ERRORS if isinstance(exc, e))
-            return Response({"error": code, "detail": str(exc)}, status=http)
+            detail = str(exc)
+            if http >= 500:  # upstream details (URLs, raw errors) stay in the server log
+                log.warning("%s: %s", code, exc)
+                detail = UPSTREAM_DETAIL[code]
+            return Response({"error": code, "detail": detail}, status=http)
 
         # The map page re-runs this exact query, so it gets every planning parameter.
         params = {k: v for k, v in q.validated_data.items() if k != "full_geometry"}

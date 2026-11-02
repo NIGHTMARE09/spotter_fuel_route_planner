@@ -1,3 +1,5 @@
+from unittest import mock
+
 import numpy as np
 import pytest
 
@@ -39,18 +41,43 @@ def test_coordinates_and_bounds():
         geocode("48.85,2.35")  # Paris
 
 
+def reverse_says(country):
+    resp = mock.Mock(status_code=200)
+    resp.json.return_value = {"address": {"country_code": country}} if country else {"error": "Unable to geocode"}
+    return mock.patch("routing.nominatim.requests.get", return_value=resp)
+
+
 @pytest.mark.parametrize(
-    "where",
-    ["25.6866,-100.3161", "23.1136,-82.3666", "45.4215,-75.6972", "27.0,-90.0"],  # Monterrey, Havana, Ottawa, Gulf
-)
-def test_points_inside_the_box_but_outside_the_us_are_rejected(where):
-    with pytest.raises(GeocodingError, match="outside the USA"):
+    "where,country",
+    [("25.6866,-100.3161", "mx"), ("23.1136,-82.3666", "cu"), ("45.4215,-75.6972", "ca"), ("27.0,-90.0", None)],
+)  # Monterrey, Havana, Ottawa, Gulf of Mexico: far from any US place, so the reverse lookup decides
+def test_points_far_from_us_places_are_checked_by_reverse_lookup(where, country):
+    with reverse_says(country) as get, pytest.raises(GeocodingError, match="outside the USA"):
         geocode(where)
+    assert get.call_count == 1
+
+
+def test_interior_alaska_is_accepted_by_reverse_lookup():
+    calls = []
+    with reverse_says("us"):
+        assert geocode("64.79,-153.27", calls).source == "coordinates"  # 45 mi from the nearest Census place
+    assert calls == ["nominatim"]
 
 
 @pytest.mark.parametrize("where", ["61.2,-149.9", "21.3,-157.85", "44.0,-103.0", "25.08,-80.45"])  # AK, HI, SD, Keys
-def test_remote_us_points_are_accepted(where):
-    assert geocode(where).source == "coordinates"
+def test_us_points_near_places_need_no_network(where):
+    calls = []
+    assert geocode(where, calls).source == "coordinates" and calls == []
+
+
+def test_free_text_resolving_abroad_is_rejected_not_forced_into_the_us():
+    hit = mock.Mock(status_code=200)
+    hit.json.return_value = [{"lat": "43.65", "lon": "-79.38", "display_name": "Toronto, Ontario, Canada",
+                              "address": {"country_code": "ca"}}]
+    with mock.patch("routing.nominatim.requests.get", return_value=hit) as get:
+        with pytest.raises(GeocodingError, match="Toronto, Ontario, Canada, outside the USA"):
+            geocode("Toronto, ON")
+    assert "countrycodes" not in get.call_args.kwargs["params"]
 
 
 @pytest.mark.parametrize(

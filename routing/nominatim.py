@@ -39,12 +39,13 @@ def _get(url, params, user_agent, timeout):
 
 
 def search(params, *, user_agent=USER_AGENT, url=DEFAULT_URL, timeout=10):
-    """First hit for a /search query as (lat, lon, display_name), or None if nothing matched."""
-    hits = _get(f"{url}/search", {**params, "limit": 1}, user_agent, timeout)
+    """First hit for a /search query as (lat, lon, display_name, country_code), or None if nothing matched."""
+    hits = _get(f"{url}/search", {**params, "limit": 1, "addressdetails": 1}, user_agent, timeout)
     if not hits:
         return None
     hit = hits[0]
-    return float(hit["lat"]), float(hit["lon"]), hit.get("display_name", "")
+    country = (hit.get("address") or {}).get("country_code")
+    return float(hit["lat"]), float(hit["lon"]), hit.get("display_name", ""), country
 
 
 def country_code(lat, lon, *, user_agent=USER_AGENT, url=DEFAULT_URL, timeout=10):

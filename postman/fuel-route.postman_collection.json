@@ -262,7 +262,7 @@
       "request": {
         "method": "GET",
         "url": {
-          "raw": "{{baseUrl}}/api/route/?start=Chicago, IL&finish=Houston, TX&start_fuel_gallons=0&corridor_miles=1",
+          "raw": "{{baseUrl}}/api/route/?start=39.0,-116.5&finish=Las Vegas, NV&start_fuel_gallons=0",
           "host": [
             "{{baseUrl}}"
           ],
@@ -274,19 +274,15 @@
           "query": [
             {
               "key": "start",
-              "value": "Chicago, IL"
+              "value": "39.0,-116.5"
             },
             {
               "key": "finish",
-              "value": "Houston, TX"
+              "value": "Las Vegas, NV"
             },
             {
               "key": "start_fuel_gallons",
               "value": "0"
-            },
-            {
-              "key": "corridor_miles",
-              "value": "1"
             }
           ]
         }

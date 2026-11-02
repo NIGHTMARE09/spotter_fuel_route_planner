@@ -62,6 +62,9 @@ REST_FRAMEWORK = {
     # Each uncached plan can hit the free OSRM / Nominatim services; cap a single client.
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
     "DEFAULT_THROTTLE_RATES": {"anon": os.environ.get("API_RATE_LIMIT", "60/min")},
+    # Throttle on the socket address; behind N trusted proxies set NUM_PROXIES=N,
+    # otherwise a client could dodge the limit with a forged X-Forwarded-For.
+    "NUM_PROXIES": int(os.environ.get("NUM_PROXIES", 0)),
     "UNAUTHENTICATED_USER": None,
 }
 

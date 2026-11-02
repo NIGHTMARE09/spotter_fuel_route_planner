@@ -25,14 +25,14 @@ from routing.text import STATE_CODES, STATE_NAMES, lookup_keys
 
 from .geo import haversine_miles
 
-# Coarse box around the US incl. Alaska and Hawaii, then a finer check: the
-# point must lie within US_MAX_MILES of some US place. Every point of the
-# Gazetteer is within ~35 mi of another; the ocean, the Caribbean and most of
-# Mexico and Canada are not. Border cities (Tijuana, Windsor, Toronto) still
-# pass - OSRM then routes through them, which is a documented limitation.
+# Is a coordinate in the US? Outside a coarse box (incl. Alaska and Hawaii): no.
+# Within US_NEAR_MILES of a Census place: yes, with no network call - every
+# Gazetteer point is within ~35 mi of another. Farther out (ocean, Mexico,
+# but also interior Alaska) Nominatim's reverse lookup decides. Border-adjacent
+# foreign points (Windsor, Toronto) pass the fast path: a documented limitation.
 US_LAT = (18.0, 72.0)
 US_LON = (-180.0, -66.0)
-US_MAX_MILES = 40.0
+US_NEAR_MILES = 40.0
 NOT_FOUND_CACHE_SECONDS = 10 * 60
 
 _LATLON = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
@@ -83,11 +83,26 @@ def _place_data():
     return _places
 
 
-def _in_us(lat, lon):
+def _in_us(lat, lon, calls):
     if not (US_LAT[0] <= lat <= US_LAT[1] and US_LON[0] <= lon <= US_LON[1]):
         return False
     places = _place_data()
-    return haversine_miles(lat, lon, places.lats, places.lons).min() <= US_MAX_MILES
+    if haversine_miles(lat, lon, places.lats, places.lons).min() <= US_NEAR_MILES:
+        return True
+    key = f"geo:cc:v1:{lat:.3f},{lon:.3f}"
+    country = cache.get(key)
+    if country is None:
+        if calls is not None:
+            calls.append("nominatim")
+        try:
+            country = nominatim.country_code(
+                lat, lon, user_agent=settings.HTTP_USER_AGENT, url=settings.NOMINATIM_URL,
+                timeout=settings.EXTERNAL_TIMEOUT_SECONDS,
+            ) or "none"  # at sea
+        except nominatim.NominatimUnavailable as exc:
+            raise GeocodingUnavailable(f"Geocoding service unavailable: {exc}") from exc
+        cache.set(key, country, settings.ROUTE_CACHE_SECONDS)
+    return country == "us"
 
 
 def _parse_city_state(text):
@@ -110,7 +125,7 @@ def geocode(text, calls=None):
     m = _LATLON.match(text)
     if m:
         lat, lon = float(m.group(1)), float(m.group(2))
-        if not _in_us(lat, lon):
+        if not _in_us(lat, lon, calls):
             raise GeocodingError(f"'{text}' is outside the USA (expected 'lat,lon').")
         return Location(text, lat, lon, f"{lat:.5f},{lon:.5f}", "coordinates")
 
@@ -134,24 +149,32 @@ def geocode(text, calls=None):
 def _nominatim(text, calls):
     key = "geo:v2:" + hashlib.sha1(re.sub(r"\s+", " ", text.lower()).encode()).hexdigest()
     hit = cache.get(key)
-    if hit == "not-found":
-        raise GeocodingError(f"Could not find '{text}' in the USA.")
+    if isinstance(hit, str):  # cached failure message
+        raise GeocodingError(hit)
     if hit:
         return Location(**{**hit, "query": text})
     if calls is not None:
         calls.append("nominatim")
     try:
+        # No countrycodes=us filter: it makes Nominatim return *some* US match for
+        # anything ("Toronto, ON" -> Toronto Court, Indianapolis). Search
+        # worldwide and reject foreign answers instead.
         result = nominatim.search(
-            {"q": text, "countrycodes": "us"},
+            {"q": text},
             user_agent=settings.HTTP_USER_AGENT,
             url=settings.NOMINATIM_URL,
             timeout=settings.EXTERNAL_TIMEOUT_SECONDS,
         )
     except nominatim.NominatimUnavailable as exc:
         raise GeocodingUnavailable(f"Geocoding service unavailable: {exc}") from exc
-    if result is None or not _in_us(result[0], result[1]):
-        cache.set(key, "not-found", NOT_FOUND_CACHE_SECONDS)
-        raise GeocodingError(f"Could not find '{text}' in the USA.")
+    error = None
+    if result is None:
+        error = f"Could not find '{text}'. Try 'City, ST' or 'lat,lon'."
+    elif result[3] != "us":
+        error = f"'{text}' resolved to {result[2]}, outside the USA. Add the state, e.g. 'Paris, TX'."
+    if error:
+        cache.set(key, error, NOT_FOUND_CACHE_SECONDS)
+        raise GeocodingError(error)
     loc = Location(text, result[0], result[1], result[2] or text, "nominatim")
     cache.set(key, loc.__dict__, settings.ROUTE_CACHE_SECONDS)
     return loc

@@ -143,6 +143,20 @@ def test_routing_service_error_is_502(client, stations):
     assert r.status_code == 502 and r.json()["error"] == "routing_failed"
 
 
+def test_upstream_error_details_stay_in_the_log(client, stations):
+    refused = requests.ConnectionError("http://10.0.0.5:5000 refused")
+    with mock.patch("routing.services.osrm.requests.get", side_effect=refused):
+        r = client.get("/api/route/", {"start": "40,-100", "finish": "40,-88"})
+    assert r.status_code == 502 and "10.0.0.5" not in r.json()["detail"]
+
+
+def test_empty_tank_trip_cost_is_the_pump_cost(client, stations):
+    with mock.patch("routing.services.osrm.requests.get", side_effect=osrm_ok):
+        s = client.post("/api/route/", {"start": "40,-99", "finish": "40,-88", "start_fuel_gallons": 0},
+                        format="json").json()["summary"]
+    assert s["starting_fuel_used_gallons"] == 0 and s["trip_fuel_cost"] == s["total_fuel_cost"]
+
+
 def test_long_retry_after_is_not_waited_for(client, stations):
     busy = mock.Mock(status_code=429, headers={"Retry-After": "30"})
     with mock.patch("routing.services.osrm.requests.get", return_value=busy) as get:
