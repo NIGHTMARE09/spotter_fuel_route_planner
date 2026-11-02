@@ -1,7 +1,7 @@
 Django==6.1.2
-djangorestframework
-requests
-numpy
+djangorestframework==3.18.3
+requests==2.34.2
+numpy==2.5.4
 # optional: psycopg[binary] for PostgreSQL, redis for REDIS_URL cache
-pytest
-pytest-django
+pytest==9.2.0
+pytest-django==4.14.0
