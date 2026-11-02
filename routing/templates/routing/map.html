@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fuel Route Planner</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <style>
+    html, body { margin: 0; height: 100%; font: 14px/1.4 system-ui, sans-serif; }
+    #map { position: absolute; inset: 0 340px 0 0; }
+    #panel { position: absolute; top: 0; right: 0; bottom: 0; width: 340px; overflow-y: auto;
+             box-sizing: border-box; padding: 16px; background: #fafafa; border-left: 1px solid #ddd; }
+    form { display: grid; gap: 6px; margin-bottom: 12px; }
+    input, button { padding: 6px 8px; font: inherit; }
+    .total { font-size: 22px; font-weight: 600; margin: 4px 0; }
+    .muted { color: #666; font-size: 12px; }
+    ol { padding-left: 20px; } li { margin-bottom: 8px; }
+    .err { color: #b00020; }
+    @media (max-width: 720px) { #map { inset: 0 0 50% 0; } #panel { top: 50%; width: 100%; border-left: 0; } }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <form id="f">
+    <input name="start" placeholder="Start, e.g. Chicago, IL" required>
+    <input name="finish" placeholder="Finish, e.g. Los Angeles, CA" required>
+    <button>Plan route</button>
+  </form>
+  <div id="out" class="muted">Enter a start and finish in the USA.</div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+const map = L.map('map').setView([39.5, -98.35], 4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18, attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+const layer = L.layerGroup().addTo(map);
+let lastBounds = null;
+new ResizeObserver(() => {
+  map.invalidateSize();
+  if (lastBounds) map.fitBounds(lastBounds, {padding: [20, 20]});
+}).observe(document.getElementById('map'));
+const out = document.getElementById('out');
+const form = document.getElementById('f');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const money = x => x == null ? '–' : '$' + x.toFixed(2);
+// Planning parameters from the page URL other than start/finish (start_fuel_gallons,
+// corridor_miles, stop_cost, ...), so a map_url from the API shows exactly that plan.
+let extras = {};
+let seq = 0;  // only the latest request may draw
+
+async function plan(params) {
+  const mine = ++seq;
+  out.textContent = 'Planning…';
+  layer.clearLayers();
+  let res, d;
+  try {
+    res = await fetch('/api/route/?' + new URLSearchParams(params));
+    d = await res.json();
+  } catch (err) {
+    if (mine === seq) out.innerHTML = `<p class="err">Request failed (${esc(err.message)}). Try again.</p>`;
+    return;
+  }
+  if (mine !== seq) return;
+  if (!res.ok) { out.innerHTML = `<p class="err">${esc(d.detail || JSON.stringify(d))}</p>`; return; }
+
+  const line = L.geoJSON(d.route.geometry, {style: {color: '#2563eb', weight: 5}}).addTo(layer);
+  L.marker([d.start.lat, d.start.lon]).bindPopup('Start: ' + esc(d.start.label)).addTo(layer);
+  L.marker([d.finish.lat, d.finish.lon]).bindPopup('Finish: ' + esc(d.finish.label)).addTo(layer);
+  d.fuel_stops.forEach(s => L.circleMarker([s.location.lat, s.location.lon], {
+      radius: 9, color: '#b45309', fillColor: '#f59e0b', fillOpacity: 0.9})
+    .bindPopup(`<b>#${s.stop_number} ${esc(s.name)}</b><br>${esc(s.city)}, ${esc(s.state)}<br>
+      Mile ${s.mile_marker} · $${s.price_per_gallon.toFixed(3)}/gal<br>${s.gallons_purchased} gal → ${money(s.cost)}`)
+    .addTo(layer));
+  // The container can be 0x0 if the page loaded in a background tab; without
+  // invalidateSize() Leaflet then "fits" the whole US at max zoom.
+  lastBounds = line.getBounds();
+  map.invalidateSize();
+  map.fitBounds(lastBounds, {padding: [20, 20]});
+
+  const sm = d.summary;
+  out.innerHTML = `
+    <div class="muted">${esc(d.start.label)} → ${esc(d.finish.label)}</div>
+    <div class="total">${money(sm.trip_fuel_cost)}</div>
+    <div class="muted">fuel for the whole trip: ${money(sm.total_fuel_cost)} at the pump
+      + ${sm.starting_fuel_used_gallons} gal from the starting tank</div>
+    <div class="muted">${d.route.distance_miles} mi · ${d.route.duration_hours} h drive ·
+      ${sm.total_gallons_purchased} gal bought · ${sm.number_of_stops} stop(s)<br>
+      Starts with ${d.assumptions.start_fuel_gallons} gal · ${d.assumptions.mpg} mpg ·
+      ${d.assumptions.max_range_miles} mi range<br>
+      ${d.meta.external_api_calls} external API call(s) · ${d.meta.elapsed_ms} ms${d.meta.cache_hit ? ' (cached)' : ''}</div>
+    <ol>${d.fuel_stops.map(s => `<li><b>${esc(s.name)}</b><br>${esc(s.city)}, ${esc(s.state)} · mile ${s.mile_marker}<br>
+      ${s.gallons_purchased} gal @ $${s.price_per_gallon.toFixed(3)} = <b>${money(s.cost)}</b></li>`).join('')}</ol>`;
+}
+
+form.addEventListener('submit', e => {
+  e.preventDefault();
+  const params = {...extras, ...Object.fromEntries(new FormData(form))};
+  history.replaceState(null, '', '?' + new URLSearchParams(params));
+  plan(params);
+});
+const qs = Object.fromEntries(new URLSearchParams(location.search));
+const {start, finish, ...rest} = qs;
+extras = rest;
+if (start && finish) {
+  form.start.value = start; form.finish.value = finish;
+  plan(qs);
+}
+</script>
+</body>
+</html>

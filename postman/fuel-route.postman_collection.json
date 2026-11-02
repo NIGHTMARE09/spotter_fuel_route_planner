@@ -1,0 +1,296 @@
+{
+  "info": {
+    "name": "Spotter Fuel Route API",
+    "description": "Cheapest fuel stops along a US driving route.\n\nSetup: `pip install -r requirements.txt`, `python manage.py migrate`, `python manage.py load_stations`, `python manage.py runserver`. Set `baseUrl` if not 127.0.0.1:8000.\n\nOptional parameters: start_fuel_gallons (default 50 = full), corridor_miles (10), stop_cost ($5 a stop is worth avoiding; 0 = cheapest fuel only), reserve_miles (0).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000"
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (pm.response.code === 200) {",
+          "  const d = pm.response.json();",
+          "  pm.test('few external API calls (OSRM once, plus Nominatim for free-text places)', () => pm.expect(d.meta.external_api_calls).to.be.at.most(3));",
+          "  pm.test('total fuel cost is a number', () => pm.expect(d.summary.total_fuel_cost).to.be.a('number'));",
+          "  pm.test('total equals the sum of the stops', () => pm.expect(d.summary.total_fuel_cost).to.be.closeTo(d.fuel_stops.reduce((a, s) => a + s.cost, 0), 0.005));",
+          "  pm.test('every stop is within one tank of the previous', () => {",
+          "    let last = 0;",
+          "    d.fuel_stops.forEach(s => { pm.expect(s.mile_marker - last).to.be.at.most(d.assumptions.max_range_miles); last = s.mile_marker; });",
+          "    pm.expect(d.route.distance_miles - last).to.be.at.most(d.assumptions.max_range_miles);",
+          "  });",
+          "  console.log('map:', d.map_url);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Coast to coast - New York, NY to Los Angeles, CA",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/route/?start=New York, NY&finish=Los Angeles, CA",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "New York, NY"
+            },
+            {
+              "key": "finish",
+              "value": "Los Angeles, CA"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Same trip again (cache hit, 0 external calls)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/route/?start=New York, NY&finish=Los Angeles, CA",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "New York, NY"
+            },
+            {
+              "key": "finish",
+              "value": "Los Angeles, CA"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Same trip, cheapest fuel only (stop_cost=0): more stops, a few $ less",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/route/?start=New York, NY&finish=Los Angeles, CA&stop_cost=0",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "New York, NY"
+            },
+            {
+              "key": "finish",
+              "value": "Los Angeles, CA"
+            },
+            {
+              "key": "stop_cost",
+              "value": "0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Same trip, keep 50 miles in reserve",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/route/?start=New York, NY&finish=Los Angeles, CA&reserve_miles=50",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "New York, NY"
+            },
+            {
+              "key": "finish",
+              "value": "Los Angeles, CA"
+            },
+            {
+              "key": "reserve_miles",
+              "value": "50"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Chicago, IL to Houston, TX (POST, empty tank)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": \"Chicago, IL\",\n  \"finish\": \"Houston, TX\",\n  \"start_fuel_gallons\": 0\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/route/",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "route",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "name": "Coordinates - Seattle to Miami",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/route/?start=47.6062,-122.3321&finish=25.7617,-80.1918",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "47.6062,-122.3321"
+            },
+            {
+              "key": "finish",
+              "value": "25.7617,-80.1918"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Short trip - Dallas, TX to Austin, TX (no stop needed)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/route/?start=Dallas, TX&finish=Austin, TX",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "Dallas, TX"
+            },
+            {
+              "key": "finish",
+              "value": "Austin, TX"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Error - location outside the USA (400)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/route/?start=Chicago, IL&finish=48.8566,2.3522",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "Chicago, IL"
+            },
+            {
+              "key": "finish",
+              "value": "48.8566,2.3522"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Error - empty tank, no station at the start (422)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/route/?start=Chicago, IL&finish=Houston, TX&start_fuel_gallons=0&corridor_miles=1",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "Chicago, IL"
+            },
+            {
+              "key": "finish",
+              "value": "Houston, TX"
+            },
+            {
+              "key": "start_fuel_gallons",
+              "value": "0"
+            },
+            {
+              "key": "corridor_miles",
+              "value": "1"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

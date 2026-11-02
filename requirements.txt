@@ -1,0 +1,7 @@
+Django==6.1.2
+djangorestframework
+requests
+numpy
+# optional: psycopg[binary] for PostgreSQL, redis for REDIS_URL cache
+pytest
+pytest-django
