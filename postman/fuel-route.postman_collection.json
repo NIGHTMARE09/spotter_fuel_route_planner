@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Spotter Fuel Route API",
-    "description": "Cheapest fuel stops along a US driving route.\n\nSetup: `pip install -r requirements.txt`, `python manage.py migrate`, `python manage.py load_stations`, `python manage.py runserver`. Set `baseUrl` if not 127.0.0.1:8000.\n\nOptional parameters: start_fuel_gallons (default 50 = full), corridor_miles (10), stop_cost ($5 a stop is worth avoiding; 0 = cheapest fuel only), reserve_miles (0).",
+    "description": "Cheapest fuel stops along a US driving route.\n\nSetup: `pip install -r requirements.txt`, `python manage.py migrate`, `python manage.py load_stations`, `python manage.py runserver`. Set `baseUrl` if not 127.0.0.1:8000.\n\nOptional parameters: start_fuel_gallons (default 50 = full), corridor_miles (10), stop_cost (0 = cheapest fuel; e.g. 5 trades a few $ of fuel for fewer stops), reserve_miles (0).\n\nsummary.trip_fuel_cost is the cost of all fuel burned on the trip (headline); summary.fuel_purchased_cost is what is paid at the listed stops.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -19,8 +19,8 @@
           "if (pm.response.code === 200) {",
           "  const d = pm.response.json();",
           "  pm.test('few external API calls (OSRM once, plus Nominatim for free-text places)', () => pm.expect(d.meta.external_api_calls).to.be.at.most(3));",
-          "  pm.test('total fuel cost is a number', () => pm.expect(d.summary.total_fuel_cost).to.be.a('number'));",
-          "  pm.test('total equals the sum of the stops', () => pm.expect(d.summary.total_fuel_cost).to.be.closeTo(d.fuel_stops.reduce((a, s) => a + s.cost, 0), 0.005));",
+          "  pm.test('trip fuel cost is a number', () => pm.expect(d.summary.trip_fuel_cost).to.be.a('number'));",
+          "  pm.test('purchased cost equals the sum of the stops', () => pm.expect(d.summary.fuel_purchased_cost).to.be.closeTo(d.fuel_stops.reduce((a, s) => a + s.cost, 0), 0.005));",
           "  pm.test('every stop is within one tank of the previous', () => {",
           "    let last = 0;",
           "    d.fuel_stops.forEach(s => { pm.expect(s.mile_marker - last).to.be.at.most(d.assumptions.max_range_miles); last = s.mile_marker; });",
@@ -88,11 +88,11 @@
       }
     },
     {
-      "name": "Same trip, cheapest fuel only (stop_cost=0): more stops, a few $ less",
+      "name": "Same trip, $5 per stop: far fewer stops for a few $ more fuel",
       "request": {
         "method": "GET",
         "url": {
-          "raw": "{{baseUrl}}/api/route/?start=New York, NY&finish=Los Angeles, CA&stop_cost=0",
+          "raw": "{{baseUrl}}/api/route/?start=New York, NY&finish=Los Angeles, CA&stop_cost=5",
           "host": [
             "{{baseUrl}}"
           ],
@@ -112,7 +112,7 @@
             },
             {
               "key": "stop_cost",
-              "value": "0"
+              "value": "5"
             }
           ]
         }

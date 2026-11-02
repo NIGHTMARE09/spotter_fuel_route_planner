@@ -20,7 +20,7 @@ class RouteQuerySerializer(serializers.Serializer):
         required=False,
         min_value=0,
         max_value=100,
-        help_text="Dollars a stop is worth avoiding (time, detour). 0 = cheapest fuel regardless of stops.",
+        help_text="Dollars a stop is worth avoiding (time, detour). Default 0 = cheapest fuel regardless of stops.",
     )
     reserve_miles = serializers.FloatField(
         required=False,

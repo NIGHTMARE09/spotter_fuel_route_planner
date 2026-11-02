@@ -86,7 +86,7 @@ async function plan(params) {
   out.innerHTML = `
     <div class="muted">${esc(d.start.label)} → ${esc(d.finish.label)}</div>
     <div class="total">${money(sm.trip_fuel_cost)}</div>
-    <div class="muted">fuel for the whole trip: ${money(sm.total_fuel_cost)} at the pump
+    <div class="muted">fuel for the whole trip: ${money(sm.fuel_purchased_cost)} at the pump
       + ${sm.starting_fuel_used_gallons} gal from the starting tank</div>
     <div class="muted">${d.route.distance_miles} mi · ${d.route.duration_hours} h drive ·
       ${sm.total_gallons_purchased} gal bought · ${sm.number_of_stops} stop(s)<br>

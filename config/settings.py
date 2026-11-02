@@ -78,10 +78,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 VEHICLE_MAX_RANGE_MILES = 500
 VEHICLE_MPG = 10
 DEFAULT_CORRIDOR_MILES = float(os.environ.get("DEFAULT_CORRIDOR_MILES", 10))
-# The optimizer minimises pump cost + STOP_COST per stop. A few dollars stands in for
-# the time and detour of a stop: on NYC->LA it halves the stops (15 -> 7) for ~$4 of fuel.
-# 0 gives the pure cheapest-fuel plan.
-DEFAULT_STOP_COST = float(os.environ.get("DEFAULT_STOP_COST", 5))
+# The optimizer minimises pump cost + STOP_COST per stop. 0 (default) is the pure
+# cheapest-fuel plan the assignment asks for; a few dollars stands in for the time and
+# detour of a stop (NYC->LA: $5 cuts 17 stops to 6 for ~$7 more fuel).
+DEFAULT_STOP_COST = float(os.environ.get("DEFAULT_STOP_COST", 0))
 DEFAULT_RESERVE_MILES = float(os.environ.get("DEFAULT_RESERVE_MILES", 0))
 
 OSRM_BASE_URL = os.environ.get("OSRM_BASE_URL", "https://router.project-osrm.org")

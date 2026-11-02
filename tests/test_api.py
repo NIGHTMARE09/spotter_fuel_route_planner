@@ -69,7 +69,7 @@ def test_plans_cheapest_stop_with_one_external_call(client, stations):
     # not the $4.00 one we pass first.
     assert [s["name"] for s in body["fuel_stops"]] == ["CHEAP MIDDLE"]
     expected = (ROUTE_MILES - 500) / 10 * 3.0
-    assert body["summary"]["total_fuel_cost"] == pytest.approx(expected, abs=0.02)
+    assert body["summary"]["fuel_purchased_cost"] == pytest.approx(expected, abs=0.02)
     assert body["meta"]["external_api_calls"] == 1
     assert get.call_count == 1
     assert body["route"]["geometry"]["type"] == "LineString"
@@ -154,7 +154,7 @@ def test_empty_tank_trip_cost_is_the_pump_cost(client, stations):
     with mock.patch("routing.services.osrm.requests.get", side_effect=osrm_ok):
         s = client.post("/api/route/", {"start": "40,-99", "finish": "40,-88", "start_fuel_gallons": 0},
                         format="json").json()["summary"]
-    assert s["starting_fuel_used_gallons"] == 0 and s["trip_fuel_cost"] == s["total_fuel_cost"]
+    assert s["starting_fuel_used_gallons"] == 0 and s["trip_fuel_cost"] == s["fuel_purchased_cost"]
 
 
 def test_long_retry_after_is_not_waited_for(client, stations):
@@ -217,7 +217,7 @@ def test_totals_are_sums_of_rounded_stops(client, stations):
     with mock.patch("routing.services.osrm.requests.get", side_effect=osrm_ok):
         body = client.post("/api/route/", {"start": "40,-99", "finish": "40,-88", "start_fuel_gallons": 0},
                            format="json").json()
-    assert body["summary"]["total_fuel_cost"] == round(sum(s["cost"] for s in body["fuel_stops"]), 2)
+    assert body["summary"]["fuel_purchased_cost"] == round(sum(s["cost"] for s in body["fuel_stops"]), 2)
 
 
 def test_stations_reload_after_table_changes(client, stations, monkeypatch):
@@ -229,7 +229,7 @@ def test_stations_reload_after_table_changes(client, stations, monkeypatch):
         FuelStation.objects.filter(opis_id=2).update(retail_price=Decimal("2.00"))
         second = client.get("/api/route/", {"start": "40,-100", "finish": "40,-88"}).json()
     assert second["meta"]["cache_hit"] is False  # new data, new cache key
-    assert second["summary"]["total_fuel_cost"] < first["summary"]["total_fuel_cost"]
+    assert second["summary"]["fuel_purchased_cost"] < first["summary"]["fuel_purchased_cost"]
 
 
 def test_map_page_renders(client):
@@ -264,7 +264,7 @@ def test_short_trip_on_full_tank_still_reports_trip_fuel_cost(client, stations):
         r = client.get("/api/route/", {"start": "40,-100", "finish": "40,-94"})
     s = r.json()["summary"]
     gallons = float(haversine_miles(40, -100, 40, -94)) / 10
-    assert s["total_fuel_cost"] == 0 and s["number_of_stops"] == 0
+    assert s["fuel_purchased_cost"] == 0 and s["number_of_stops"] == 0
     # starting fuel valued at the cheapest station within the first tank ($3.00 at lon -95),
     # not the first one passed ($4.00), so a full tank never looks dearer than an empty one
     assert s["starting_fuel_valued_at"] == 3.0
@@ -276,4 +276,11 @@ def test_trip_fuel_cost_includes_pump_spend(client, stations):
         s = client.get("/api/route/", {"start": "40,-100", "finish": "40,-88"}).json()["summary"]
     used = s["trip_gallons_consumed"] - s["total_gallons_purchased"]
     assert s["starting_fuel_used_gallons"] == pytest.approx(used, abs=0.01)
-    assert s["trip_fuel_cost"] == pytest.approx(s["total_fuel_cost"] + used * 3.0, abs=0.05)
+    assert s["trip_fuel_cost"] == pytest.approx(s["fuel_purchased_cost"] + used * 3.0, abs=0.05)
+
+
+def test_defaults_are_cheapest_fuel_and_trip_cost_headline(client, stations):
+    with mock.patch("routing.services.osrm.requests.get", side_effect=osrm_ok):
+        body = client.get("/api/route/", {"start": "40,-100", "finish": "40,-88"}).json()
+    assert body["assumptions"]["stop_cost"] == 0
+    assert next(iter(body["summary"])) == "trip_fuel_cost"

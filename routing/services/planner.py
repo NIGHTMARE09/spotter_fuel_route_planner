@@ -99,10 +99,11 @@ def plan_trip(start, finish, *, start_fuel_gallons, corridor_miles, stop_cost, r
         },
         "fuel_stops": stops,
         "summary": {
-            "total_fuel_cost": pump_cost,  # money spent at the pump on this trip
-            "total_gallons_purchased": round(plan.total_gallons, 2),
+            # Headline: what the fuel burned on this trip costs, whatever was in the tank at the start.
             "trip_fuel_cost": round(trip_cost, 2) if trip_cost is not None else None,
             "trip_gallons_consumed": round(trip_gallons, 2),
+            "fuel_purchased_cost": pump_cost,  # money spent at the stops below
+            "total_gallons_purchased": round(plan.total_gallons, 2),
             "starting_fuel_used_gallons": round(starting_fuel_used, 2),
             "starting_fuel_valued_at": round(starting_price, 3) if starting_price is not None else None,
             "number_of_stops": len(stops),
